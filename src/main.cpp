@@ -4,6 +4,7 @@
 #include "init_wifi.h"
 #include "LittleFS.h"
 #include "rsa.h"
+#include "yes_fs.h"
 
 bool initFS();
 bool initWebsocket();
@@ -16,7 +17,11 @@ void setup() {
 
 	initSuccess &= initFS();
 	if (!initSuccess) return;
-	initSuccess &= testKeyGen();
+	// initSuccess &= testFS();
+	// if (!initSuccess) return;
+	// initSuccess &= testKeyGen();
+	// if (!initSuccess) return;
+	initSuccess &= CryptoInit();
 	if (!initSuccess) return;
 	initSuccess &= initWifi();
 	if (!initSuccess) return;
@@ -46,115 +51,61 @@ bool initWebsocket()
 		Serial.println("> Connected to WS!");
 
 		Serial.println("> Sending login-1 event!");
-		webSocket.emit("login-1", "\"Hello World!\"");
+
+		// Get the public key
+		// "{\"public-key\":\"ABC\"}"
+		char data[PUB_KEY_PEM_SIZE + 100];
+		memset(data, 0, sizeof(data));
+
+		// create temporary public key with \n replaced with \\n
+		char tempPubKey[PUB_KEY_PEM_SIZE];
+		memset(tempPubKey, 0, sizeof(tempPubKey));
+		int i = 0;
+		for (int i2 = 0; i2 < PUB_KEY_PEM_SIZE; i2++) {
+			if (pubKeyPem[i2] == '\n') {
+				tempPubKey[i++] = '\\';
+				tempPubKey[i++] = 'n';
+			} else if (pubKeyPem[i2] == '\0')
+				break;
+			else 
+				tempPubKey[i++] = pubKeyPem[i2];
+		}
+
+		sprintf(data, "{\"public-key\": \"%s\"}", tempPubKey);
+
+		Serial.printf(" > Sending Login Payload (%d %d %d): %s\n", 
+		strlen((const char*)pubKeyPem), strlen(data), PUB_KEY_PEM_SIZE,
+		data);
+		webSocket.emit("login-1", data);
 	});
 
 	webSocket.on("disconnect", [](const char* payload, size_t length) {
 		Serial.println("> Disconnected from WS!");
 	});
 
-	webSocket.on("login-1", [](const char* payload, size_t length) {
-		Serial.println("> Received login-1 event from WS!");
+	webSocket.on("login-2", [](const char* payload, size_t length) {
+		Serial.println("> Received login-2 event from WS!");
 		Serial.print(" > Payload: ");
 		Serial.println(payload);
 	});
 
+	webSocket.on("login-1", [](const char* payload, size_t length) {
+		Serial.println("> Received login-1 event from WS!");
+		Serial.print(" > Payload: ");
+		Serial.println(payload);
+
+		const char* phrase = "ABC";
+
+		char data[100];
+		memset(data, 0, sizeof(data));
+		sprintf(data, "{\"phrase\": \"%s\"}", phrase);
+		Serial.printf(" > Sending Login-2 Payload: %s\n", data);
+
+		webSocket.emit("login-2", data);
+	});
+
 	Serial.println("> Connecting to WS at goofy2.marceldobehere.com at port 443!");
 	webSocket.beginSSL("goofy2.marceldobehere.com", 443, "/socket.io/?EIO=3&transport=websocket");
-
-	return true;
-}
-
-bool testFS();
-bool initFS()
-{
-	Serial.println("> Doing FS Init!");
-	// Using LittleFS
-
-	if (!LittleFS.begin()) {
-		Serial.println("An Error has occurred while mounting LittleFS");
-		return false;
-	}
-
-	Serial.println("LittleFS mounted successfully");
-
-	return testFS();
-}
-
-bool testFS()
-{
-	Serial.println("> Doing FS Test!");
-
-	// First check if test1.txt exists and print it if it does
-	// Then check if test2.txt exists and if not create it
-	// Print the contents of test2.txt
-	// Then write the contents + "Hello World!" to test2.txt
-	// Print the contents of test2.txt
-
-	File file = LittleFS.open("/test1.txt", "r");
-	if (!file) 
-	{
-		Serial.println(" > File test1.txt does not exist");
-		return false;
-	} 
-
-	Serial.println(" > File test1.txt exists");
-	Serial.println("  > Contents of test1.txt:");
-	while (file.available()) 
-		Serial.write(file.read());
-	Serial.println();
-	file.close();
-	
-	file = LittleFS.open("/test2.txt", "r");
-	if (!file)
-	{
-		Serial.println(" > File test2.txt does not exist");
-		Serial.println(" > Creating test2.txt");
-		file = LittleFS.open("/test2.txt", "w");
-		if (!file)
-		{
-			Serial.println(" > Failed to create test2.txt");
-			return false;
-		}
-		file = LittleFS.open("/test2.txt", "r");
-		if (!file)
-		{
-			Serial.println(" > Failed to open test2.txt after creation");
-			return false;
-		}
-	}
-
-	Serial.println(" > File test2.txt exists");
-	Serial.println("  > Contents of test2.txt:");
-	while (file.available())
-		Serial.write(file.read());
-	Serial.println();
-	file.close();
-
-	file = LittleFS.open("/test2.txt", "a");
-	if (!file)
-	{
-		Serial.println(" > Failed to open test2.txt for appending");
-		return false;
-	}
-
-	Serial.println(" > Appending \"Hello World!\" to test2.txt");
-	file.println("Hello World!");
-	file.close();
-
-	file = LittleFS.open("/test2.txt", "r");
-	if (!file)
-	{
-		Serial.println(" > Failed to open test2.txt after appending");
-		return false;
-	}
-
-	Serial.println(" > File test2.txt exists");
-	Serial.println("  > Contents of test2.txt:");
-	while (file.available())
-		Serial.write(file.read());
-	Serial.println();
-	file.close();
 
 	return true;
 }

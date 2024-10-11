@@ -4,108 +4,47 @@
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/entropy.h>
 #include <mbedtls/pk.h>
-
+#include "yes_fs.h"
 
 bool testKeyGen()
 {
     Serial.println("> Doing RSA Key Gen Test!");
 
-    bool res = Crypto_GenerateKeyPair();
-    if (res) {
-        Serial.println("Key pair generated successfully");
-    } else {
+    bool res = Crypto_GenerateKeyPair(true);
+    if (!res) {
         Serial.println("Key pair generation failed");
+        return false;
     }
-    return res;
+
+    res = Crypto_Verify(false);
+    if (!res) {
+        Serial.println("Key pair verification failed");
+        return false;
+    }
+
+    const char* privKeyPath = "/test_privkey.pem";
+    const char* pubKeyPath = "/test_pubkey.pem";
+
+    res = Crypto_WriteKeyToFile(privKeyPath, pubKeyPath);
+    if (!res) {
+        Serial.println("Key pair write to file failed");
+        return false;
+    }
+
     
-    // This test function will create a 2048 bit RSA key pair and print it in PEM format
+    res = Crypto_ReadKeyFromFile(privKeyPath, pubKeyPath);
+    if (!res) {
+        Serial.println("Key pair read from file failed");
+        return false;
+    }
 
-    // Initialize the structures
-    Serial.println("> Initializing RSA Context");
-    mbedtls_rsa_context rsa;
-    mbedtls_entropy_context entropy;
-    mbedtls_ctr_drbg_context ctr_drbg;
-
-    // Initialize the contexts
-    Serial.println("> Initializing Entropy and CTR_DRBG");
-    mbedtls_entropy_init(&entropy);
-    mbedtls_ctr_drbg_init(&ctr_drbg);
-
-    // Seed the entropy
-    Serial.println("> Seeding Entropy");
-    mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, NULL, 0);
-
-    // Generate the key pair
-    Serial.println("> Generating RSA Key Pair");
-    mbedtls_rsa_init(&rsa, MBEDTLS_RSA_PKCS_V15, 0);
-    mbedtls_rsa_gen_key(&rsa, mbedtls_ctr_drbg_random, &ctr_drbg, 2048, 65537);
-
-    // Print the key pair
-    // Serial.println("> Printing RSA Key Pair");
-    // char buf[1024];
-    // mbedtls_mpi N, P, Q, D, E, DP, DQ, QP;
-    // mbedtls_mpi_init(&N);
-    // mbedtls_mpi_init(&P);
-    // mbedtls_mpi_init(&Q);
-    // mbedtls_mpi_init(&D);
-    // mbedtls_mpi_init(&E);
-    // mbedtls_mpi_init(&DP);
-    // mbedtls_mpi_init(&DQ);
-    // mbedtls_mpi_init(&QP);
-    // mbedtls_rsa_export(&rsa, &N, &P, &Q, &D, &E);
-    // mbedtls_rsa_export_crt(&rsa, &DP, &DQ, &QP);
-    // size_t oLen;
-    // mbedtls_mpi_write_string(&N, 16, buf, sizeof(buf), &oLen);
-    // Serial.println(buf);
-    // mbedtls_mpi_write_string(&P, 16, buf, sizeof(buf), &oLen);
-    // Serial.println(buf);
-    // mbedtls_mpi_write_string(&Q, 16, buf, sizeof(buf), &oLen);
-    // Serial.println(buf);
-    // mbedtls_mpi_write_string(&D, 16, buf, sizeof(buf), &oLen);
-    // Serial.println(buf);
-    // mbedtls_mpi_write_string(&E, 16, buf, sizeof(buf), &oLen);
-    // Serial.println(buf);
-    // mbedtls_mpi_write_string(&DP, 16, buf, sizeof(buf), &oLen);
-    // Serial.println(buf);
-    // mbedtls_mpi_write_string(&DQ, 16, buf, sizeof(buf), &oLen);
-    // Serial.println(buf);
-    // mbedtls_mpi_write_string(&QP, 16, buf, sizeof(buf), &oLen);
-    // Serial.println(buf);
-    // works
-
-    // Print the key pair in PEM format
-    Serial.println("> Printing RSA Key Pair (1)");
-    char buf[1024];
-    mbedtls_pk_context pk;
-    Serial.println("> Printing RSA Key Pair (2)");
-    mbedtls_pk_init(&pk);
-    Serial.println("> Printing RSA Key Pair (3)");
-    mbedtls_pk_setup(&pk, mbedtls_pk_info_from_type(MBEDTLS_PK_RSA));
-    Serial.println("> Printing RSA Key Pair (4)");
-    mbedtls_rsa_copy(mbedtls_pk_rsa(pk), &rsa);
-    Serial.println("> Printing RSA Key Pair (5)");
-    mbedtls_pk_write_key_pem(&pk, (unsigned char *)buf, sizeof(buf));
-    Serial.println("> Printing RSA Key Pair (6)");
-    Serial.println(buf);
-    Serial.println("> Printing RSA Key Pair (7)");
-    mbedtls_pk_free(&pk);
-    Serial.println("> Printing RSA Key Pair (8)");
-
-
-
-    // Free the contexts
-    Serial.println("> Freeing RSA Context");
-    mbedtls_rsa_free(&rsa);
-    Serial.println("> Freeing Entropy and CTR_DRBG");
-    mbedtls_ctr_drbg_free(&ctr_drbg);
-    mbedtls_entropy_free(&entropy);
-
-    Serial.println("> Done RSA Key Gen Test!");
+    Serial.println("> RSA Key Gen Test Done!");
+    return true;
 }
 
 
-static unsigned char privKeyPem[2000];
-static unsigned char pubKeyPem[1000];
+unsigned char privKeyPem[PRIV_KEY_PEM_SIZE];
+unsigned char pubKeyPem[PUB_KEY_PEM_SIZE];
 
 uint32_t privKeyOffset = 0 * CONFIG_WL_SECTOR_SIZE;
 uint32_t pubKeyOffset = 1 * CONFIG_WL_SECTOR_SIZE;
@@ -121,7 +60,7 @@ const char personalizationString[11] = "rsa_genkey";	//requires static size allo
 #define EXPONENT 65537
 
 
-bool Crypto_GenerateKeyPair(void) 
+bool Crypto_GenerateKeyPair(bool shouldPrint) 
 {
 	bool ret = false;	 //== ESP_OK
 
@@ -140,7 +79,7 @@ bool Crypto_GenerateKeyPair(void)
 		printf("pk_setup failed: %i\n", ret);
 	}
 
-	printf(" ok\n  . Generating the RSA key [ %d-bit ]...", KEY_SIZE);
+	printf("Generating the RSA key [ %d-bit ]...", KEY_SIZE);
 
 	/* force task yield before generate a key that could take several seconds to do */
 	taskYIELD();
@@ -159,32 +98,33 @@ bool Crypto_GenerateKeyPair(void)
 	puts("Writing public key to string(PEM format)....");
 
 	//unsigned char pubKeyPem[1000];
-	memset(pubKeyPem, 0, sizeof(pubKeyPem));
-	if (mbedtls_pk_write_pubkey_pem(&pk, pubKeyPem, sizeof(pubKeyPem)) != 0) {
+	memset(pubKeyPem, 0, PUB_KEY_PEM_SIZE);
+	if (mbedtls_pk_write_pubkey_pem(&pk, pubKeyPem, PUB_KEY_PEM_SIZE) != 0) {
 		puts("Err: Write public key to string failed");
 		goto cleanup;
 	}
     else
     {
         const char* t = (const char*)pubKeyPem;
-        Serial.println(t);
+        if (shouldPrint)
+            Serial.println(t);
     }
 
 
 	puts("Writing private key to string(PEM format)....");
 
-	memset(privKeyPem, 0, sizeof(privKeyPem));
-	ret = mbedtls_pk_write_key_pem(&pk, privKeyPem, sizeof(privKeyPem));
+	memset(privKeyPem, 0, PRIV_KEY_PEM_SIZE);
+	ret = mbedtls_pk_write_key_pem(&pk, privKeyPem, PRIV_KEY_PEM_SIZE);
 	if (ret != 0) {
 		printf("write private key to string failed with code %04x\n", ret);
 	}
     else
     {
         const char* t = (const char*)privKeyPem;
-        Serial.println(t);
+        if (shouldPrint)
+            Serial.println(t);
     }
 
-	puts(" ok\n  .");
 	puts("Success, Key pair created.");
 
 cleanup:
@@ -217,11 +157,118 @@ bool Crypto_Verify(bool initisalised) {
 		goto exit;
 	}
 
-	puts("RSA keys confirmed");
+	puts("> RSA keys valid!");
 
 exit:
 	if (!initisalised) {
 		mbedtls_pk_free(&pk);
 	}
 	return !ret;
+}
+
+bool Crypto_WriteKeyToFile(const char* privKeyPath, const char* pubKeyPath) 
+{
+    Serial.println("> Writing keys to file");
+
+    bool res = writeFile(privKeyPath, (const char*)privKeyPem);
+    if (!res) {
+        Serial.println("Failed to write private key to file");
+        return false;
+    }
+
+    res = writeFile(pubKeyPath, (const char*)pubKeyPem);
+    if (!res) {
+        Serial.println("Failed to write public key to file");
+        return false;
+    }
+
+    Serial.println("> Keys written to file successfully");
+    return true;
+}
+
+bool Crypto_ReadKeyFromFile(const char* privKeyPath, const char* pubKeyPath) 
+{
+    Serial.println("> Reading keys from file");
+
+    FileRead privKey = readFile(privKeyPath);
+    if (privKey.data == NULL) {
+        Serial.println("Failed to read private key from file");
+        return false;
+    }
+
+    FileRead pubKey = readFile(pubKeyPath);
+    if (pubKey.data == NULL) {
+        Serial.println("Failed to read public key from file");
+        return false;
+    }
+
+    Serial.println("> PARSED CRYPTO KEYS:");
+    Serial.println(" > Private Key:");
+    Serial.println(privKey.data);
+    Serial.println(" > Public Key:");
+    Serial.println(pubKey.data);
+
+    // Check size with the internal variables
+    if (privKey.size > PRIV_KEY_PEM_SIZE || pubKey.size > PUB_KEY_PEM_SIZE) {
+        Serial.println("Key size mismatch");
+        return false;
+    }
+
+    // Write the keys to the internal variables
+    memcpy(privKeyPem, privKey.data, privKey.size + 1);
+    memcpy(pubKeyPem, pubKey.data, pubKey.size + 1);
+
+    // Verify the keys
+    Crypto_Verify(false);
+
+    free((void*)privKey.data);
+    free((void*)pubKey.data);
+
+    Serial.println("> Keys read from file successfully");
+    return true;
+}
+
+
+bool CryptoInit()
+{
+    Serial.println("> Initialising Crypto");
+
+    const char* privKeyPath = "/internal_privKey.pem";
+    const char* pubKeyPath = "/internal_pubKey.pem";
+
+    Serial.println("> Checking if keys exist");
+    bool res = true;
+    if (fileExists(privKeyPath) && fileExists(pubKeyPath)) 
+    {
+        Serial.println("> Reading keys");
+        res = Crypto_ReadKeyFromFile(privKeyPath, pubKeyPath);
+        if (res)
+            return true;
+    }
+
+    Serial.println("> Generating keys");
+    res = Crypto_GenerateKeyPair(true);
+    if (!res) {
+        Serial.println("Failed to generate keys");
+        return false;
+    }
+
+    res = Crypto_WriteKeyToFile(privKeyPath, pubKeyPath);
+    if (!res) {
+        Serial.println("Failed to write keys to file");
+        return false;
+    }
+    
+    return true;
+}
+
+
+const char* Crypt_Encrypt(const char* data)
+{
+    return "";
+}
+
+const char* Crypt_Decrypt(const char* data)
+{
+    return "";
 }
