@@ -5,6 +5,7 @@
 #include "LittleFS.h"
 #include "rsa.h"
 #include "yes_fs.h"
+#include "mbedtls/base64.h"
 
 bool initFS();
 bool initWebsocket();
@@ -22,6 +23,8 @@ void setup() {
 	// initSuccess &= testKeyGen();
 	// if (!initSuccess) return;
 	initSuccess &= CryptoInit();
+	if (!initSuccess) return;
+	initSuccess &= testEncDec();
 	if (!initSuccess) return;
 	initSuccess &= initWifi();
 	if (!initSuccess) return;
@@ -94,11 +97,71 @@ bool initWebsocket()
 		Serial.print(" > Payload: ");
 		Serial.println(payload);
 
-		const char* phrase = "ABC";
+		// we get a payload like this
+		// {"phrase":"JXqLmG80mMCTMK0FWhhqag..."}
+		// we need to extract the phrase and decrypt it
+
+		// extract the phrase
+		const char* phraseStart = strstr(payload, "\"phrase\":\"");
+		if (phraseStart == NULL) {
+			Serial.println(" > Failed to extract phrase from payload");
+			return;
+		}
+		phraseStart += strlen("\"phrase\":\"");
+		const char* phraseEnd = strstr(phraseStart, "\"");
+		if (phraseEnd == NULL) {
+			Serial.println(" > Failed to extract phrase from payload");
+			return;
+		}
+
+		char phraseB64[1024];
+		memset(phraseB64, 0, sizeof(phraseB64));
+		strncpy(phraseB64, phraseStart, phraseEnd - phraseStart);
+
+		// print the phrase
+		Serial.print(" > Phrase: ");
+		Serial.println(phraseB64);
+
+		// Convert the phrase from base64 to bytes
+		size_t phraseLen = 0;
+		unsigned char phraseBytes[2048];
+		int res = mbedtls_base64_decode(
+			phraseBytes, sizeof(phraseBytes), &phraseLen, 
+			(const unsigned char*)phraseB64, strlen(phraseB64));
+		if (res != 0) {
+			Serial.printf(" > Failed to decode base64 phrase: %d\n", res);
+
+			char errBuf[1024];
+			mbedtls_strerror(res, errBuf, sizeof(errBuf));
+			Serial.printf("Error: %s\n", errBuf);
+
+			return;
+		}
+
+		// print the phrase bytes
+		Serial.printf(" > Phrase Bytes (%d): ", phraseLen);
+		for (int i = 0; i < phraseLen; i++) {
+			Serial.print(phraseBytes[i], HEX);
+			Serial.print(" ");
+		}
+		Serial.println();
+
+		// decrypt the phrase
+		// TODO: Fix this for some reason crashing here
+		const char* decryptedPhrase = Crypt_Decrypt(StrRes((const char*)phraseBytes, phraseLen)).data;
+		if (decryptedPhrase == NULL) {
+			Serial.println(" > Failed to decrypt phrase");
+			return;
+		}
+
+		// print the decrypted phrase
+		Serial.print(" > Decrypted Phrase: ");
+		Serial.println(decryptedPhrase);
+
 
 		char data[100];
 		memset(data, 0, sizeof(data));
-		sprintf(data, "{\"phrase\": \"%s\"}", phrase);
+		sprintf(data, "{\"phrase\": \"%s\"}", decryptedPhrase);
 		Serial.printf(" > Sending Login-2 Payload: %s\n", data);
 
 		webSocket.emit("login-2", data);

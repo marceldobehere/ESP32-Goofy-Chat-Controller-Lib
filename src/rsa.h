@@ -1,5 +1,6 @@
 #pragma once
 #include "rsa.h"
+#include <stdint.h>
 
 #define PRIV_KEY_PEM_SIZE 2000
 #define PUB_KEY_PEM_SIZE 1000
@@ -16,8 +17,17 @@ bool Crypto_GenerateKeyPair(bool shouldPrint);
 bool Crypto_WriteKeyToFile(const char* privKeyPath, const char* pubKeyPath);
 bool Crypto_ReadKeyFromFile(const char* privKeyPath, const char* pubKeyPath);
 
-const char* Crypt_Encrypt(const char* data);
-const char* Crypt_Decrypt(const char* data);
+struct StrRes {
+    const char* data;
+    uint64_t size;
+
+    StrRes(const char* data, uint64_t size) : data(data), size(size) {}
+    StrRes(const char* data);
+};
+
+StrRes Crypt_Encrypt(StrRes data);
+StrRes Crypt_Decrypt(StrRes data);
+bool testEncDec();
 
 // For later reference
 // https://mbed-tls.readthedocs.io/en/latest/kb/cryptography/rsa-key-pair-generator/

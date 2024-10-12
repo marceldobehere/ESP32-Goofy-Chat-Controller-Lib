@@ -5,6 +5,7 @@
 #include <mbedtls/entropy.h>
 #include <mbedtls/pk.h>
 #include "yes_fs.h"
+#include <mbedtls/error.h>
 
 bool testKeyGen()
 {
@@ -71,22 +72,22 @@ bool Crypto_GenerateKeyPair(bool shouldPrint)
 
 	puts("Seeding the random number generator...");
 	if ((ret = mbedtls_ctr_drbg_seed(&ctrDrbg, mbedtls_entropy_func, &entropy, (const unsigned char *)personalizationString, strlen(personalizationString))) != 0) {
-		printf("Failed to seed rng\nmbedtls_ctr_drbg_seed returned %d\n", ret);
+		Serial.printf("Failed to seed rng\nmbedtls_ctr_drbg_seed returned %d\n", ret);
 		goto cleanup;
 	}
 
 	if ((ret = mbedtls_pk_setup(&pk, mbedtls_pk_info_from_type(MBEDTLS_PK_RSA))) != 0) {
-		printf("pk_setup failed: %i\n", ret);
+		Serial.printf("pk_setup failed: %i\n", ret);
 	}
 
-	printf("Generating the RSA key [ %d-bit ]...", KEY_SIZE);
+	Serial.printf("Generating the RSA key [ %d-bit ]...", KEY_SIZE);
 
 	/* force task yield before generate a key that could take several seconds to do */
 	taskYIELD();
 	puts("Generating a key pair takes up to 20s and will likely trigger task watchdog during this process");
 
 	if ((ret = mbedtls_rsa_gen_key(mbedtls_pk_rsa(pk), mbedtls_ctr_drbg_random, &ctrDrbg, KEY_SIZE, EXPONENT)) != 0) {
-		printf(" failed\n  ! mbedtls_rsa_gen_key returned %d\n\n", ret);
+		Serial.printf(" failed\n  ! mbedtls_rsa_gen_key returned %d\n\n", ret);
 		goto cleanup;
 	}
 
@@ -116,7 +117,7 @@ bool Crypto_GenerateKeyPair(bool shouldPrint)
 	memset(privKeyPem, 0, PRIV_KEY_PEM_SIZE);
 	ret = mbedtls_pk_write_key_pem(&pk, privKeyPem, PRIV_KEY_PEM_SIZE);
 	if (ret != 0) {
-		printf("write private key to string failed with code %04x\n", ret);
+		Serial.printf("write private key to string failed with code %04x\n", ret);
 	}
     else
     {
@@ -141,7 +142,7 @@ bool Crypto_Verify(bool initisalised) {
 	if (!initisalised) {
 		mbedtls_pk_init(&pk);
 		if ((ret = mbedtls_pk_parse_key(&pk, privKeyPem, strlen((const char *)privKeyPem) + 1, NULL, 0)) != 0) {
-			printf("Unable to parse %d\n", ret);
+			Serial.printf("Unable to parse %d\n", ret);
 			goto exit;
 		}
 	}
@@ -243,7 +244,7 @@ bool CryptoInit()
         Serial.println("> Reading keys");
         res = Crypto_ReadKeyFromFile(privKeyPath, pubKeyPath);
         if (res)
-            return true;
+            return Crypto_Verify(false);
     }
 
     Serial.println("> Generating keys");
@@ -259,16 +260,166 @@ bool CryptoInit()
         return false;
     }
     
+    return Crypto_Verify(false);
+}
+
+StrRes::StrRes(const char* data) : data(data), size(strlen(data)) {}
+
+bool testEncDec()
+{
+    Serial.println("> Testing encryption and decryption");
+
+    Serial.printf("> Status: %d\n", Crypto_Verify(false));
+
+    const char* data = "Hello World!";
+    StrRes encryptedData = Crypt_Encrypt(data);
+    if (encryptedData.data == NULL) {
+        Serial.println("> Failed to encrypt data");
+        return false;
+    }
+
+    StrRes decryptedData = Crypt_Decrypt(encryptedData);
+    if (decryptedData.data == NULL) {
+        Serial.println("> Failed to decrypt data");
+        return false;
+    }
+
+    Serial.println(" > Original data:");
+    Serial.println(data);
+    // Serial.println(" > Encrypted data:");
+    // Serial.println(encryptedData.data);
+    Serial.printf(" > Encrypted data (%d): ", encryptedData.size);
+    for (int i = 0; i < encryptedData.size; i++) {
+        Serial.print(encryptedData.data[i], HEX);
+        Serial.print(" ");
+    }
+    Serial.println();
+    Serial.println(" > Decrypted data:");
+    Serial.println(decryptedData.data);
+
+    // check 
+    if (strcmp(data, decryptedData.data) != 0) {
+        Serial.println("> Decrypted data does not match original data");
+        return false;
+    }
+    Serial.println("> Decrypted data matches original data");
+
+    // free memory
+    free((void*)encryptedData.data);
+    free((void*)decryptedData.data);
+
     return true;
 }
 
-
-const char* Crypt_Encrypt(const char* data)
+StrRes Crypt_Encrypt(StrRes data)
 {
-    return "";
+    Serial.println("> Encrypting data");
+
+    // initialise the random number generator
+    int ret;
+    mbedtls_ctr_drbg_init(&ctrDrbg);
+    mbedtls_entropy_init(&entropy);
+	if ((ret = mbedtls_ctr_drbg_seed(&ctrDrbg, mbedtls_entropy_func, &entropy, (const unsigned char *)personalizationString, strlen(personalizationString))) != 0) {
+		Serial.printf("Failed to seed rng\nmbedtls_ctr_drbg_seed returned %d\n", ret);
+		return StrRes(NULL, 0);
+	}
+
+    // load the public key
+    mbedtls_pk_init(&pk);
+    if ((ret = mbedtls_pk_parse_public_key(&pk, pubKeyPem, strlen((const char *)pubKeyPem) + 1)) != 0) {
+        Serial.printf("Unable to parse %d\n", ret);
+
+        char errBuf[1024];
+        mbedtls_strerror(ret, errBuf, sizeof(errBuf));
+        Serial.printf("Error: %s\n", errBuf);
+
+        return StrRes(NULL, 0);
+    }
+
+    // encrypt data with the loaded public key
+    // return the encrypted data
+
+    unsigned char buf[MBEDTLS_MPI_MAX_SIZE];
+    size_t olen = 0;
+
+    int res = mbedtls_pk_encrypt(&pk, 
+        (const unsigned char*)data.data, data.size, 
+        buf, &olen, sizeof(buf), 
+        mbedtls_ctr_drbg_random, &ctrDrbg);
+    
+    if (res != 0) {
+        Serial.printf("Failed to encrypt data: %d\n", res);
+        char errBuf[1024];
+        mbedtls_strerror(res, errBuf, sizeof(errBuf));
+        Serial.printf("Error: %s\n", errBuf);
+        return StrRes(NULL, 0);
+    }
+
+    Serial.println("> Data encrypted successfully");
+    // malloc and copy the encrypted data
+    char* encryptedData = (char*)malloc(olen + 1);
+    if (encryptedData == NULL) {
+        Serial.println("Failed to allocate memory for encrypted data");
+        return StrRes(NULL, 0);
+    }
+
+    memcpy(encryptedData, buf, olen);
+    encryptedData[olen] = '\0';
+
+    mbedtls_pk_free(&pk);
+    return StrRes(encryptedData, olen);
 }
 
-const char* Crypt_Decrypt(const char* data)
+StrRes Crypt_Decrypt(StrRes data)
 {
-    return "";
+    Serial.println("> Decrypting data");
+
+    // initialise the random number generator
+    int ret;
+    mbedtls_ctr_drbg_init(&ctrDrbg);
+    mbedtls_entropy_init(&entropy);
+	if ((ret = mbedtls_ctr_drbg_seed(&ctrDrbg, mbedtls_entropy_func, &entropy, (const unsigned char *)personalizationString, strlen(personalizationString))) != 0) {
+		Serial.printf("Failed to seed rng\nmbedtls_ctr_drbg_seed returned %d\n", ret);
+		return StrRes(NULL, 0);
+	}
+
+    // load the public key
+    mbedtls_pk_init(&pk);
+    if ((ret = mbedtls_pk_parse_key(&pk, privKeyPem, strlen((const char *)privKeyPem) + 1, NULL, 0)) != 0) {
+        Serial.printf("Unable to parse %d\n", ret);
+        return StrRes(NULL, 0);
+    }
+
+    // decrypt data with the loaded private key
+    // return the decrypted data
+
+    unsigned char buf[MBEDTLS_MPI_MAX_SIZE];
+    size_t olen = 0;
+
+    int res = mbedtls_pk_decrypt(&pk, 
+        (const unsigned char*)data.data, data.size, 
+        buf, &olen, sizeof(buf), 
+        mbedtls_ctr_drbg_random, &ctrDrbg);
+    
+    if (res != 0) {
+        Serial.printf("Failed to decrypt data: %d\n", res);
+        char errBuf[1024];
+        mbedtls_strerror(res, errBuf, sizeof(errBuf));
+        Serial.printf("Error: %s\n", errBuf);
+        return StrRes(NULL, 0);
+    }
+
+    Serial.println("> Data decrypted successfully");
+    // malloc and copy the decrypted data
+    char* decryptedData = (char*)malloc(olen + 1);
+    if (decryptedData == NULL) {
+        Serial.println("Failed to allocate memory for decrypted data");
+        return StrRes(NULL, 0);
+    }
+
+    memcpy(decryptedData, buf, olen);
+    decryptedData[olen] = '\0';
+
+    mbedtls_pk_free(&pk);
+    return StrRes(decryptedData, olen);
 }
