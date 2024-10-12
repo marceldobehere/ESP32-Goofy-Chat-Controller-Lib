@@ -12,3 +12,6 @@ Although the Goofy Chat 2 server can be self hosted if its wanted.
 
 
 
+## NOTE
+
+THIS IS FAR FROM DONE AND VERY WIP RIGHT NOW
