@@ -288,12 +288,12 @@ bool testEncDec()
     Serial.println(data);
     // Serial.println(" > Encrypted data:");
     // Serial.println(encryptedData.data);
-    Serial.printf(" > Encrypted data (%d): ", encryptedData.size);
-    for (int i = 0; i < encryptedData.size; i++) {
-        Serial.print(encryptedData.data[i], HEX);
-        Serial.print(" ");
-    }
-    Serial.println();
+    // Serial.printf(" > Encrypted data (%d): ", encryptedData.size);
+    // for (int i = 0; i < encryptedData.size; i++) {
+    //     Serial.print(encryptedData.data[i], HEX);
+    //     Serial.print(" ");
+    // }
+    // Serial.println();
     Serial.println(" > Decrypted data:");
     Serial.println(decryptedData.data);
 

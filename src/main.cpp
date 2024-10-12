@@ -12,7 +12,10 @@ bool initWebsocket();
 SocketIoClient webSocket;
 bool initSuccess;
 
+SET_LOOP_TASK_STACK_SIZE(32 * 1024); // 32KB
+
 void setup() {
+	
 	Serial.begin(9600);
 	initSuccess = true;
 
@@ -139,15 +142,14 @@ bool initWebsocket()
 		}
 
 		// print the phrase bytes
-		Serial.printf(" > Phrase Bytes (%d): ", phraseLen);
-		for (int i = 0; i < phraseLen; i++) {
-			Serial.print(phraseBytes[i], HEX);
-			Serial.print(" ");
-		}
-		Serial.println();
+		// Serial.printf(" > Phrase Bytes (%d): ", phraseLen);
+		// for (int i = 0; i < phraseLen; i++) {
+		// 	Serial.print(phraseBytes[i], HEX);
+		// 	Serial.print(" ");
+		// }
+		// Serial.println();
 
 		// decrypt the phrase
-		// TODO: Fix this for some reason crashing here
 		const char* decryptedPhrase = Crypt_Decrypt(StrRes((const char*)phraseBytes, phraseLen)).data;
 		if (decryptedPhrase == NULL) {
 			Serial.println(" > Failed to decrypt phrase");
