@@ -4,8 +4,10 @@
 #include "init_wifi.h"
 #include "LittleFS.h"
 #include "rsa.h"
+#include "aes.h"
 #include "yes_fs.h"
 #include "mbedtls/base64.h"
+#include <ArduinoJson.h>
 
 bool initFS();
 bool initWebsocket();
@@ -29,6 +31,8 @@ void setup() {
 	if (!initSuccess) return;
 	initSuccess &= testEncDec();
 	if (!initSuccess) return;
+	initSuccess &= aesTest();
+	if (!initSuccess) return;
 	initSuccess &= initWifi();
 	if (!initSuccess) return;
 	initSuccess &= initWebsocket();
@@ -47,6 +51,60 @@ void loop() {
 	webSocket.loop();
 }
 
+StrRes decryptBase64RsaArr(JsonArray dataContentArr) {
+	if (dataContentArr.isNull())
+		return StrRes(NULL, 0);
+
+	char* resultConcatStr = (char*)malloc(6 * 1024);
+	memset(resultConcatStr, 0, sizeof(6 * 1024));
+
+	for (int i = 0; i < dataContentArr.size(); i++) {
+		const char* dataContent = dataContentArr[i];
+		// Serial.printf("  > Data Content %d: %s\n", i, dataContent);
+
+		char phraseB64[1 * 1024];
+		memset(phraseB64, 0, sizeof(phraseB64));
+		strncpy(phraseB64, dataContent, min(strlen(dataContent), sizeof(phraseB64)));
+
+		// Convert the phrase from base64 to bytes
+		size_t phraseLen = 0;
+		unsigned char phraseBytes[1 * 1024];
+		int res = mbedtls_base64_decode(
+			phraseBytes, sizeof(phraseBytes), &phraseLen, 
+			(const unsigned char*)phraseB64, strlen(phraseB64));
+		if (res != 0) {
+			Serial.printf("  > Failed to decode base64 phrase: %d\n", res);
+
+			char errBuf[1024];
+			mbedtls_strerror(res, errBuf, sizeof(errBuf));
+			Serial.printf("Error: %s\n", errBuf);
+
+			free(resultConcatStr);
+			return StrRes(NULL, 0);
+		}
+
+		// Serial.printf("  > Phrase Bytes (%d): ", phraseLen);
+		// for (int i = 0; i < phraseLen; i++) {
+		// 	Serial.print(phraseBytes[i], HEX);
+		// 	Serial.print(" ");
+		// }
+
+		Serial.flush();
+
+		StrRes dataDecrypted = Crypt_Decrypt(StrRes((const char*)phraseBytes, phraseLen));
+		if (dataDecrypted.data == NULL) {
+			Serial.println(" > Failed to decrypt data");
+			free(resultConcatStr);
+			return StrRes(NULL, 0);
+		}
+
+		Serial.printf("  > Decrypted Data Content: %s\n", dataDecrypted.data);
+
+		strcat(resultConcatStr, dataDecrypted.data);
+	}
+
+	return StrRes(resultConcatStr);
+}
 
 
 bool initWebsocket()
@@ -87,6 +145,69 @@ bool initWebsocket()
 
 	webSocket.on("disconnect", [](const char* payload, size_t length) {
 		Serial.println("> Disconnected from WS!");
+	});
+
+	webSocket.on("message", [](const char* payload, size_t length) {
+		Serial.println("> Received message event from WS!");
+		Serial.print(" > Payload: ");
+		Serial.println(payload);
+		JsonDocument doc;
+		deserializeJson(doc, payload);
+
+		int fromId = doc["from"];
+		int toId = doc["to"];
+		const char* date = doc["date"];
+		const char* dataType = doc["data"]["type"];
+		
+		Serial.printf(" > From: %d\n", fromId);
+		Serial.printf(" > To: %d\n", toId);
+		Serial.printf(" > Date: %s\n", date);
+		Serial.printf(" > Data Type: %s\n", dataType);
+
+		if (strcmp(dataType, "aes") == 0) {
+			Serial.println(" > Data Type: AES");
+			Serial.flush();
+
+			const char* dataContent = doc["data"]["data"];
+			Serial.printf(" > Data Content: %s\n", dataContent);
+			Serial.flush();
+		}
+		else if (strcmp(dataType, "rsa") == 0) {
+			Serial.println(" > Data Type: RSA");
+			Serial.flush();
+
+			JsonObject obj = doc["data"];
+			JsonArray dataContentArr = obj["data"].as<JsonArray>();
+
+			Serial.printf(" > Data Content Arr Len: %d\n", dataContentArr.size());
+			Serial.flush();
+
+			StrRes decrypted = decryptBase64RsaArr(dataContentArr);
+			if (decrypted.data == NULL) {
+				Serial.println(" > Failed to decrypt RSA data");
+				return;
+			}
+
+			Serial.printf(" > Decrypted Data: %s\n", decrypted.data);
+
+			JsonDocument rsaDoc;
+			deserializeJson(rsaDoc, decrypted.data);
+
+			const char* msgType = rsaDoc["type"];
+			
+			if (strcmp(msgType, "symm-key") == 0) {
+				const char* symmKey = rsaDoc["symmKey"];
+				Serial.printf(" > Symmetric Key: %s\n", symmKey);
+			} else {
+				Serial.printf(" > Invalid Message Type: %s\n", msgType);
+			}
+
+			free((void*)decrypted.data);
+		
+		} else {
+			Serial.println(" > Unknown data type");
+			return;
+		}
 	});
 
 	webSocket.on("login-2", [](const char* payload, size_t length) {
@@ -165,6 +286,8 @@ bool initWebsocket()
 		memset(data, 0, sizeof(data));
 		sprintf(data, "{\"phrase\": \"%s\"}", decryptedPhrase);
 		Serial.printf(" > Sending Login-2 Payload: %s\n", data);
+
+		free((void*)decryptedPhrase);
 
 		webSocket.emit("login-2", data);
 	});

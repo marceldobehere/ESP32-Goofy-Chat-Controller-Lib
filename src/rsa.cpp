@@ -267,7 +267,7 @@ StrRes::StrRes(const char* data) : data(data), size(strlen(data)) {}
 
 bool testEncDec()
 {
-    Serial.println("> Testing encryption and decryption");
+    Serial.println("> Testing RSA encryption and decryption");
 
     Serial.printf("> Status: %d\n", Crypto_Verify(false));
 
