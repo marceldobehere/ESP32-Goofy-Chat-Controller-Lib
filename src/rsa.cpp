@@ -265,6 +265,8 @@ bool CryptoInit()
 
 StrRes::StrRes(const char* data) : data(data), size(strlen(data)) {}
 
+StrRes::StrRes() : data(NULL), size(0) {}
+
 bool testEncDec()
 {
     Serial.println("> Testing RSA encryption and decryption");

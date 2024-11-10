@@ -23,6 +23,7 @@ struct StrRes {
 
     StrRes(const char* data, uint64_t size) : data(data), size(size) {}
     StrRes(const char* data);
+    StrRes();
 };
 
 StrRes Crypt_Encrypt(StrRes data);
