@@ -7,6 +7,7 @@
 #include <mbedtls/aes.h>
 #include <mbedtls/error.h>
 #include <mbedtls/md.h>
+#include <wolfssl/openssl/evp.h>
 
 // https://www.base64decode.org
 // https://www.toolhelper.cn/en/SymmetricEncryption/AES
@@ -123,6 +124,7 @@ bool aesTest()
     }
     Serial.println();
 
+
     // Extract the encrypted data
     const char* encryptedDataStart = saltEnd;
     size_t encryptedDataLen = phraseLen_2 - (encryptedDataStart - (const char*)phraseBytes_2);
@@ -159,15 +161,34 @@ bool aesTest()
 
     // Generate the Key and IV using EVP_BytesToKey
 
-    unsigned char KeyBytes[16];
+    unsigned char KeyBytes[32];
     unsigned char IvBytes[16];
 
     // EVP_BytesToKey
     // https://stackoverflow.com/questions/29534656/c-version-of-openssl-evp-bytestokey-method
     
 
+    // Use This function to generate the key and IV
+    // WOLFSSL_API int wolfSSL_EVP_BytesToKey(const WOLFSSL_EVP_CIPHER* type,
+    //     const WOLFSSL_EVP_MD* md, const byte* salt,
+    //     const byte* data, int sz, int count, byte* key, byte* iv);
+
+    wolfSSL_Init();
+
+    Serial.printf(" > Password/Data: %s\n", key);
+
+    res = EVP_BytesToKey(EVP_aes_256_cbc(), EVP_md5(), 
+        saltBytes, (const unsigned char*)key, strlen(key), 1, KeyBytes, IvBytes);
+    
+    if (res == 0) {
+        Serial.printf(" > Failed to generate key and IV: %d\n", res);
+        return false;
+    }
+    Serial.printf(" > Size: %d\n", res);
+
+
     Serial.print(" > Key: ");
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 32; i++) {
     	Serial.print(KeyBytes[i], HEX);
     	Serial.print(" ");
     }
@@ -183,7 +204,7 @@ bool aesTest()
     // Decrypt the data
     StrRes dataDecrypted = AES_Decrypt(
         StrRes((const char*)encryptedDataBytes, encryptedDataLen),
-        StrRes((const char*)KeyBytes, 16),
+        StrRes((const char*)KeyBytes, 32),
         StrRes((const char*)IvBytes, 16)
     );
 
