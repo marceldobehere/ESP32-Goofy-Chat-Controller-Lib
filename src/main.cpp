@@ -8,6 +8,7 @@
 #include "yes_fs.h"
 #include "mbedtls/base64.h"
 #include <ArduinoJson.h>
+#include "symmKey.h"
 
 bool initFS();
 bool initWebsocket();
@@ -33,11 +34,13 @@ void setup() {
 	if (!initSuccess) return;
 	initSuccess &= aesTest();
 	if (!initSuccess) return;
+	initSuccess &= initSymmKeyStuff();
+	if (!initSuccess) return;
 	initSuccess &= initWifi();
 	if (!initSuccess) return;
 	initSuccess &= initWebsocket();
 	if (!initSuccess) return;
-
+	
 
 	Serial.println("> Setup done!");
 }
@@ -147,9 +150,7 @@ bool initWebsocket()
 		Serial.println("> Disconnected from WS!");
 	});
 
-	const char* lastSymmKey = NULL;
-
-	webSocket.on("message", [lastSymmKey](const char* payload, size_t length) mutable {
+	webSocket.on("message", [](const char* payload, size_t length) mutable {
 		Serial.println("> Received message event from WS!");
 		Serial.print(" > Payload: ");
 		Serial.println(payload);
@@ -174,6 +175,7 @@ bool initWebsocket()
 			Serial.printf(" > Data Content: %s\n", dataContent);
 			Serial.flush();
 
+			const char* lastSymmKey = getSymmKey(fromId);
 			if (lastSymmKey == NULL) {
 				Serial.println(" > No symmetric key available");
 				return;
@@ -186,6 +188,34 @@ bool initWebsocket()
 			}
 
 			Serial.printf(" > Decrypted Data: %s\n", decrypted.data);
+
+			if (decrypted.size < 4) {
+				Serial.println(" > Invalid Decrypted Data");
+				free((void*)decrypted.data);
+				return;
+			}
+
+			// Parse JSON (Is a JSON in a string)
+			JsonDocument msgDoc1;
+			deserializeJson(msgDoc1, decrypted.data);
+			Serial.println(" > Parsed JSON 1");
+
+			// Parse actual JSON OBJ
+			JsonDocument msgDoc;
+			deserializeJson(msgDoc, msgDoc1.as<const char*>());
+			Serial.println(" > Parsed JSON 2");
+
+			const char* msgType = msgDoc["type"];
+			Serial.printf(" > Message Type: %s\n", msgType);
+
+			if (strcmp(msgType, "text") == 0) {
+				const char* msgContent = msgDoc["data"];
+				Serial.printf(" > Message Content: %s\n", msgContent);
+			} else {
+				Serial.printf(" > Invalid Message Type: %s\n", msgType);
+			}
+
+
 			free((void*)decrypted.data);
 		}
 		else if (strcmp(dataType, "rsa") == 0) {
@@ -214,11 +244,7 @@ bool initWebsocket()
 			if (strcmp(msgType, "symm-key") == 0) {
 				const char* symmKey = rsaDoc["symmKey"];
 				Serial.printf(" > Symmetric Key: %s\n", symmKey);
-
-				if (lastSymmKey != NULL) {
-					free((void*)lastSymmKey);
-				}
-				lastSymmKey = strdup(symmKey);
+				setSymmKey(fromId, symmKey);
 			} else {
 				Serial.printf(" > Invalid Message Type: %s\n", msgType);
 			}

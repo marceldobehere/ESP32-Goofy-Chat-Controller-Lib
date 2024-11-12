@@ -439,15 +439,29 @@ StrRes AES_Decrypt(StrRes input, StrRes key, StrRes iv)
 
     mbedtls_aes_free(&aes);
 
+    output[outputLen] = '\0';
+
     if (output[0] == '"') {
-        int lastIndex = outputLen - 1;
-        while (output[lastIndex] != '"') {
-            lastIndex--;
+        // int lastIndex = outputLen - 1;
+        // while (output[lastIndex] != '"') {
+        //     lastIndex--;
+        // }
+        // lastIndex++;
+        int lastIndex = 1;
+        while (lastIndex < outputLen) 
+        {
+            if (output[lastIndex] == '"') {
+                break;
+            }
+            if (output[lastIndex] == '\\')
+                lastIndex++;
+            lastIndex++;
         }
-        lastIndex++;
-        if (lastIndex < outputLen - 1) {
-            output[lastIndex] = '\0';
-        }
+
+        if (lastIndex < outputLen)
+            lastIndex++;
+        
+        output[lastIndex] = '\0';
         outputLen = lastIndex;
     } else {
         Serial.printf("> FIRST CHAR IS NOT QUOTE: %c\n", output[0]);
