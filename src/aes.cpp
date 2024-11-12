@@ -77,8 +77,10 @@ bool aesTest()
         }
 
         Serial.printf("  > Original Data: %s\n", ogData);
-        Serial.printf("  > Encrypted Data: %d\n", encryptedData.size);
+        Serial.printf("  > Encrypted Size: %d\n", encryptedData.size);
+        Serial.printf("  > Decrypted Size: %d\n", decryptedData.size);
         Serial.printf("  > Decrypted Data: %s\n", decryptedData.data);
+
         if (strcmp(ogData, decryptedData.data) != 0) {
             Serial.println(" > Decrypted data does not match original data");
             free((void*)encryptedData.data);
@@ -90,8 +92,7 @@ bool aesTest()
         free((void*)decryptedData.data);
     }
 
-    // return true;
-    return false;
+    return true;
 }
 
 StrRes AES_B64_Decrypt(StrRes input, StrRes password)
@@ -266,8 +267,9 @@ AesKeyMix ParseB64AesData(StrRes data, StrRes password)
     // Serial.println();
 
     // malloc encrypted data
-    unsigned char* encryptedDataBytesMalloc = (unsigned char*)malloc(encryptedDataLen);
+    unsigned char* encryptedDataBytesMalloc = (unsigned char*)malloc(encryptedDataLen + 1);
     memcpy(encryptedDataBytesMalloc, encryptedDataBytes, encryptedDataLen);
+    encryptedDataBytesMalloc[encryptedDataLen] = '\0';
     return AesKeyMix{(const char*)KeyBytes, (const char*)IvBytes, (const char*)saltBytes, StrRes((const char*)encryptedDataBytesMalloc, encryptedDataLen)};
 }
 
@@ -393,8 +395,9 @@ StrRes CreateB64AesData(StrRes data, StrRes password)
     }
 
     // make new malloc
-    unsigned char* encryptedDataBytesMalloc2 = (unsigned char*)malloc(encryptedDataBytesB64_1Len);
+    unsigned char* encryptedDataBytesMalloc2 = (unsigned char*)malloc(encryptedDataBytesB64_1Len + 1);
     memcpy(encryptedDataBytesMalloc2, encryptedDataBytesB64_2, encryptedDataBytesB64_1Len);
+    encryptedDataBytesMalloc2[encryptedDataBytesB64_1Len] = '\0';
 
     return StrRes((const char*)encryptedDataBytesMalloc2, encryptedDataBytesB64_1Len);
 }
@@ -419,12 +422,12 @@ StrRes AES_Decrypt(StrRes input, StrRes key, StrRes iv)
 
     size_t inputLen = input.size;
     size_t outputLen = inputLen;
-    unsigned char* output = (unsigned char*)malloc(outputLen);
+    unsigned char* output = (unsigned char*)malloc(outputLen + 1);
     if (output == NULL) {
         Serial.println("Failed to allocate memory for AES decryption output");
         return StrRes(NULL, 0);
     }
-    memset(output, 0, outputLen);
+    memset(output, 0, outputLen + 1);
 
 
 

@@ -147,7 +147,9 @@ bool initWebsocket()
 		Serial.println("> Disconnected from WS!");
 	});
 
-	webSocket.on("message", [](const char* payload, size_t length) {
+	const char* lastSymmKey = NULL;
+
+	webSocket.on("message", [lastSymmKey](const char* payload, size_t length) mutable {
 		Serial.println("> Received message event from WS!");
 		Serial.print(" > Payload: ");
 		Serial.println(payload);
@@ -171,6 +173,20 @@ bool initWebsocket()
 			const char* dataContent = doc["data"]["data"];
 			Serial.printf(" > Data Content: %s\n", dataContent);
 			Serial.flush();
+
+			if (lastSymmKey == NULL) {
+				Serial.println(" > No symmetric key available");
+				return;
+			}
+
+			StrRes decrypted = AES_B64_Decrypt(StrRes(dataContent), StrRes(lastSymmKey));
+			if (decrypted.data == NULL) {
+				Serial.println(" > Failed to decrypt AES data");
+				return;
+			}
+
+			Serial.printf(" > Decrypted Data: %s\n", decrypted.data);
+			free((void*)decrypted.data);
 		}
 		else if (strcmp(dataType, "rsa") == 0) {
 			Serial.println(" > Data Type: RSA");
@@ -198,6 +214,11 @@ bool initWebsocket()
 			if (strcmp(msgType, "symm-key") == 0) {
 				const char* symmKey = rsaDoc["symmKey"];
 				Serial.printf(" > Symmetric Key: %s\n", symmKey);
+
+				if (lastSymmKey != NULL) {
+					free((void*)lastSymmKey);
+				}
+				lastSymmKey = strdup(symmKey);
 			} else {
 				Serial.printf(" > Invalid Message Type: %s\n", msgType);
 			}
