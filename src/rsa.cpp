@@ -6,6 +6,7 @@
 #include <mbedtls/pk.h>
 #include "yes_fs.h"
 #include <mbedtls/error.h>
+#include <mbedtls/sha256.h>
 
 bool testKeyGen()
 {
@@ -424,4 +425,65 @@ StrRes Crypt_Decrypt(StrRes data)
 
     mbedtls_pk_free(&pk);
     return StrRes(decryptedData, olen);
+}
+
+// Use SHA256 to sign the data
+StrRes Crypt_Sign(StrRes data)
+{
+    Serial.print("> Signing data: ");
+    Serial.println(data.data);
+
+    // initialise the random number generator
+    int ret;
+    mbedtls_ctr_drbg_init(&ctrDrbg);
+    mbedtls_entropy_init(&entropy);
+    if ((ret = mbedtls_ctr_drbg_seed(&ctrDrbg, mbedtls_entropy_func, &entropy, (const unsigned char *)personalizationString, strlen(personalizationString))) != 0) {
+        Serial.printf("Failed to seed rng\nmbedtls_ctr_drbg_seed returned %d\n", ret);
+        return StrRes(NULL, 0);
+    }
+
+    // load the private key
+    mbedtls_pk_init(&pk);
+    if ((ret = mbedtls_pk_parse_key(&pk, privKeyPem, strlen((const char *)privKeyPem) + 1, NULL, 0)) != 0) {
+        Serial.printf("Unable to parse %d\n", ret);
+        return StrRes(NULL, 0);
+    }
+
+    // sign data with the loaded private key
+    // return the signed data
+
+    // Create the SHA256 hash of the data
+    unsigned char hash[32];
+    mbedtls_sha256((const unsigned char*)data.data, data.size, (unsigned char*)hash, 0);
+    
+    unsigned char buf[MBEDTLS_PK_SIGNATURE_MAX_SIZE];
+    size_t olen = 0;
+
+    int res = mbedtls_pk_sign(&pk, 
+        MBEDTLS_MD_SHA256, 
+        hash, sizeof(hash), 
+        buf, &olen, 
+        mbedtls_ctr_drbg_random, &ctrDrbg);
+    
+    if (res != 0) {
+        Serial.printf("Failed to sign data: %d\n", res);
+        char errBuf[1024];
+        mbedtls_strerror(res, errBuf, sizeof(errBuf));
+        Serial.printf("Error: %s\n", errBuf);
+        return StrRes(NULL, 0);
+    }
+
+    Serial.println("> Data signed successfully");
+    // malloc and copy the signed data
+    char* signedData = (char*)malloc(olen + 1);
+    if (signedData == NULL) {
+        Serial.println("Failed to allocate memory for signed data");
+        return StrRes(NULL, 0);
+    }
+
+    memcpy(signedData, buf, olen);
+    signedData[olen] = '\0';
+
+    mbedtls_pk_free(&pk);
+    return StrRes(signedData, olen);   
 }

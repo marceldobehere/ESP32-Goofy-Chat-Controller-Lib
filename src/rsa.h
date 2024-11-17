@@ -28,6 +28,7 @@ struct StrRes {
 
 StrRes Crypt_Encrypt(StrRes data);
 StrRes Crypt_Decrypt(StrRes data);
+StrRes Crypt_Sign(StrRes data);
 bool testEncDec();
 
 // For later reference

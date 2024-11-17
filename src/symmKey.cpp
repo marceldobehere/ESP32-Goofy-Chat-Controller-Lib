@@ -54,6 +54,13 @@ const char* getSymmKey(uint64_t userId)
     return cache[userId];
 }
 
+const char* getMySymmKey(uint64_t userId)
+{
+    // TODO: Create a random key and save it to a file and stuff
+    // instead of using the same key for both sides
+    return getSymmKey(userId);
+}
+
 void setSymmKey(uint64_t userId, const char* key)
 {
     if (cache.find(userId) != cache.end())

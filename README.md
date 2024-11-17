@@ -15,3 +15,5 @@ Although the Goofy Chat 2 server can be self hosted if its wanted.
 ## NOTE
 
 THIS IS FAR FROM DONE AND VERY WIP RIGHT NOW
+
+Also if you compile / try to run this yourself, you might come across some compiler errors. Some are fixable by commenting out the error code.
