@@ -566,3 +566,8 @@ void mainLoop()
 {
     webSocket.loop();
 }
+
+void addValidUser(uint64_t userId)
+{
+	// TODO: Implement this
+}
