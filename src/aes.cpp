@@ -60,7 +60,7 @@ bool aesTest()
 
     // full encryption / decryption test
     {
-        const char* ogData = "\"This is a test\"";
+        const char* ogData = "\"This is a test lol\"";
         const char* password = "Hello123";
 
         StrRes encryptedData = AES_B64_Encrypt(StrRes(ogData), StrRes(password));
@@ -244,7 +244,7 @@ AesKeyMix ParseB64AesData(StrRes data, StrRes password)
     unsigned char IvBytes[16];
 
     res = EVP_BytesToKey(EVP_aes_256_cbc(), EVP_md5(), 
-        saltBytes, (const unsigned char*)password.data, strlen(password.data), 1, KeyBytes, IvBytes);
+        saltBytes, (const unsigned char*)password.data, password.size, 1, KeyBytes, IvBytes);
     
     if (res == 0) {
         Serial.printf(" > Failed to generate key and IV: %d\n", res);
@@ -282,12 +282,15 @@ StrRes AES_B64_Encrypt(StrRes input, StrRes password)
     }
 
     bool newYes = false;
-    if (input.size % 16 != 0) {
+    //if (input.size % 16 != 0) 
+    {
         // pad
-        size_t newSize = input.size + (16 - (input.size % 16));
-        char* newInput = (char*)malloc(newSize);
+        size_t newSize = input.size + 32 + (16 - (input.size % 16));
+        char* newInput = (char*)malloc(newSize + 1);
         memcpy(newInput, input.data, input.size);
-        memset(newInput + input.size, 0, newSize - input.size);
+        memset(newInput + input.size, ' ', newSize - input.size);
+        //memset(newInput + (newSize - 16), 0, 16);
+        newInput[newSize] = '\0';
         input = StrRes(newInput, newSize);
         newYes = true;
     }
@@ -319,7 +322,7 @@ StrRes CreateB64AesData(StrRes data, StrRes password)
     unsigned char IvBytes[16];
 
     int res = EVP_BytesToKey(EVP_aes_256_cbc(), EVP_md5(), 
-        (const unsigned char*)aesData.salt, (const unsigned char*)password.data, strlen(password.data), 1, KeyBytes, IvBytes);
+        (const unsigned char*)aesData.salt, (const unsigned char*)password.data, password.size, 1, KeyBytes, IvBytes);
         
     if (res == 0) {
         Serial.printf(" > Failed to generate key and IV: %d\n", res);

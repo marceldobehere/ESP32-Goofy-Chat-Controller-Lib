@@ -3,17 +3,19 @@
 #include <string.h>
 #include "yes_fs.h"
 
-std::map<uint64_t, const char*> cache;
+std::map<uint64_t, const char*> Symmcache;
+std::map<uint64_t, const char*> pubKeyCache;
 
 bool initSymmKeyStuff()
 {
-    cache.clear();
+    Symmcache.clear();
+    pubKeyCache.clear();
     return true;
 }
 
 const char* userIdSToStr(uint64_t userId)
 {
-    char* userIdStr = (char*)malloc(100);
+    char* userIdStr = (char*)malloc(130);
     userIdStr = itoa(userId, userIdStr, 10);
     const char* path = "/symmKey_";
     const char* path2 = ".txt";
@@ -43,15 +45,15 @@ void saveSymmKeyToFile(uint64_t userId, const char* key)
 
 const char* getSymmKey(uint64_t userId)
 {
-    if (cache.find(userId) == cache.end())
+    if (Symmcache.find(userId) == Symmcache.end())
     {
         const char* potentialKey = getSymmKeyFromFile(userId);
         if (potentialKey != NULL)
-            cache[userId] = potentialKey;
+            Symmcache[userId] = potentialKey;
         return potentialKey;
     }
 
-    return cache[userId];
+    return Symmcache[userId];
 }
 
 const char* getMySymmKey(uint64_t userId)
@@ -63,9 +65,9 @@ const char* getMySymmKey(uint64_t userId)
 
 void setSymmKey(uint64_t userId, const char* key)
 {
-    if (cache.find(userId) != cache.end())
+    if (Symmcache.find(userId) != Symmcache.end())
     {
-        const char* oldKey = cache[userId];
+        const char* oldKey = Symmcache[userId];
         if (oldKey != NULL)
         {
             if (strcmp(oldKey, key) == 0)
@@ -75,6 +77,67 @@ void setSymmKey(uint64_t userId, const char* key)
         }
     }
 
-    cache[userId] = strdup(key);
+    Symmcache[userId] = strdup(key);
     saveSymmKeyToFile(userId, key);
+}
+
+
+const char* userIdPubSToStr(uint64_t userId)
+{
+    char* userIdStr = (char*)malloc(130);
+    userIdStr = itoa(userId, userIdStr, 10);
+    const char* path = "/pubKey_";
+    const char* path2 = ".txt";
+    char* fullPath = (char*)malloc(strlen(path) + strlen(userIdStr) + strlen(path2) + 1);
+    strcpy(fullPath, path);
+    strcat(fullPath, userIdStr);
+    strcat(fullPath, path2);
+    free((void*)userIdStr);
+    return fullPath;
+}
+
+const char* getPubKeyFromFile(uint64_t userId)
+{
+    const char* path = userIdPubSToStr(userId);
+    FileRead fileRead = readFile(path);
+    free((void*)path);
+    return fileRead.data;
+}
+
+void savePubKeyToFile(uint64_t userId, const char* key)
+{
+    const char* path = userIdPubSToStr(userId);
+    writeFile(path, key);
+    free((void*)path);
+}
+
+const char* getPubKey(uint64_t userId)
+{
+    if (pubKeyCache.find(userId) == pubKeyCache.end())
+    {
+        const char* potentialKey = getPubKeyFromFile(userId);
+        if (potentialKey != NULL)
+            pubKeyCache[userId] = potentialKey;
+        return potentialKey;
+    }
+
+    return pubKeyCache[userId];
+}
+
+void setPubKey(uint64_t userId, const char* key)
+{
+    if (pubKeyCache.find(userId) != pubKeyCache.end())
+    {
+        const char* oldKey = pubKeyCache[userId];
+        if (oldKey != NULL)
+        {
+            if (strcmp(oldKey, key) == 0)
+                return;
+            
+            free((void*)oldKey);
+        }
+    }
+
+    pubKeyCache[userId] = strdup(key);
+    savePubKeyToFile(userId, key);
 }

@@ -17,6 +17,7 @@ SocketIoClient webSocket;
 uint64_t myUserId = 0;
 bool initSuccess = false;
 void (*extHandleMessage)(const char* message, uint64_t userIdFrom) = NULL;
+uint64_t lastUserIdPubKey = 0;
 
 int min(unsigned int a, unsigned int b)
 {
@@ -62,7 +63,7 @@ StrRes* encryptBase64RsaStr(StrRes data, int* outArrLen)
 		unsigned char encryptedB64[1024];
 		int res = mbedtls_base64_encode(
 			encryptedB64, sizeof(encryptedB64), &encryptedB64Len, 
-			(const unsigned char*)encrypted.data, strlen(encrypted.data));
+			(const unsigned char*)encrypted.data, encrypted.size);
 		if (res != 0) {
 			Serial.printf(" > Failed to encode base64 chunk %d: %d\n", i, res);
 			char errBuf[1024];
@@ -158,6 +159,13 @@ StrRes decryptBase64RsaArr(JsonArray dataContentArr) {
 // will always send a symm-key message
 bool sendWsRsaMessage(uint64_t userId, const char* msg)
 {
+	// Get User Pub Key
+	const char* userPubKey = getPubKey(userId);
+	if (userPubKey == NULL) {
+		Serial.println(" > Failed to get user public key");
+		return false;
+	}
+
 	// Create a message object from the msg
 	JsonDocument doc;
 	doc["type"] = "symm-key";
@@ -176,27 +184,31 @@ bool sendWsRsaMessage(uint64_t userId, const char* msg)
     // Get the public key from the userid
     // TODO: Implement
 
+	Crypt_SetPublicKey(userPubKey);
+
 	// Encrypt the message using RSA
-	StrRes encryptedMsg = Crypt_Encrypt(StrRes(msgStr));
-	if (encryptedMsg.data == NULL) {
-		Serial.println(" > Failed to encrypt message");
-		return false;
-	}
+	// StrRes encryptedMsg = Crypt_Encrypt(StrRes(msgStr));
+	// if (encryptedMsg.data == NULL) {
+	// 	Serial.println(" > Failed to encrypt message");
+	// 	return false;
+	// }
 
 	// Convert Encrypted Message into an Array of Base64 Strings
 	int arrLen = 0;
-	StrRes* encryptedMsgArr = encryptBase64RsaStr(encryptedMsg, &arrLen);
+	StrRes* encryptedMsgArr = encryptBase64RsaStr(StrRes(msgStr), &arrLen);
 	if (encryptedMsgArr == NULL) {
 		Serial.println(" > Failed to convert encrypted message to base64 array");
-		free((void*)encryptedMsg.data);
+		//free((void*)encryptedMsg.data);
 		return false;
 	}
+
+	CryptoInit();
 
 	// Generate the Signature
 	StrRes signature = Crypt_Sign(StrRes(msgStr));
 	if (signature.data == NULL) {
 		Serial.println(" > Failed to generate signature");
-		free((void*)encryptedMsg.data);
+		//free((void*)encryptedMsg.data);
 		for (int i = 0; i < arrLen; i++) {
 			free((void*)encryptedMsgArr[i].data);
 		}
@@ -208,10 +220,10 @@ bool sendWsRsaMessage(uint64_t userId, const char* msg)
 	unsigned char signatureB64[1024];
 	int res = mbedtls_base64_encode(
 		signatureB64, sizeof(signatureB64), &signatureB64Len, 
-		(const unsigned char*)signature.data, strlen(signature.data));
+		(const unsigned char*)signature.data, signature.size);
 	if (res != 0) {
 		Serial.printf(" > Failed to encode signature to base64: %d\n", res);
-		free((void*)encryptedMsg.data);
+		//free((void*)encryptedMsg.data);
 		for (int i = 0; i < arrLen; i++) {
 			free((void*)encryptedMsgArr[i].data);
 		}
@@ -241,7 +253,7 @@ bool sendWsRsaMessage(uint64_t userId, const char* msg)
 	memset(finalStr, 0, sizeof(finalStr));
 	if (serializeJson(finalDoc, finalStr) == 0) {
 		Serial.println(" > Failed to serialize final JSON");
-		free((void*)encryptedMsg.data);
+		//free((void*)encryptedMsg.data);
 		for (int i = 0; i < arrLen; i++) {
 			free((void*)encryptedMsgArr[i].data);
 		}
@@ -255,7 +267,7 @@ bool sendWsRsaMessage(uint64_t userId, const char* msg)
 	webSocket.emit("send-message", finalStr);
 
 	// Cleanup
-	free((void*)encryptedMsg.data);
+	//free((void*)encryptedMsg.data);
 	for (int i = 0; i < arrLen; i++) {
 		free((void*)encryptedMsgArr[i].data);
 	}
@@ -265,14 +277,125 @@ bool sendWsRsaMessage(uint64_t userId, const char* msg)
 
 bool sendWsAesMessage(uint64_t userId, const char* msg)
 {
-    // TODO: Implement
-	return false;
+	// Create Message Object
+	// Get Symmetric Key
+	// Encrypt Message Object
+	// Create Main JSON Object
+	// Send JSON Object
+
+	// Create Message Object
+	JsonDocument msgDoc;
+	msgDoc["type"] = "text";
+	msgDoc["data"] = msg;
+	msgDoc["messageId"] = random(0, 1000000);
+
+	// Convert the message object into a string
+	char msgStr[2*1024];
+	memset(msgStr, 0, sizeof(msgStr));
+	if (serializeJson(msgDoc, msgStr) == 0) {
+		Serial.println(" > Failed to serialize JSON");
+		return false;
+	}
+	Serial.printf(" > Message: %s\n", msgStr);
+
+	// Get Symmetric Key
+	const char* symmKey = getMySymmKey(userId);
+	if (symmKey == NULL) {
+		Serial.println(" > Failed to get symmetric key");
+		return false;
+	}
+	Serial.printf(" > Symmetric Key: %s\n", symmKey);
+
+		// Convert final String to JSON String (essentially add quotes)
+	JsonDocument msgStrDoc;
+	msgStrDoc = msgStr;
+	
+	char msgStrJson[1024*2];
+	memset(msgStrJson, 0, sizeof(msgStrJson));
+	if (serializeJson(msgStrDoc, msgStrJson) == 0) 
+	{
+		Serial.println(" > Failed to serialize JSON");
+		return false;
+	}
+	Serial.printf(" > Message JSON: %s\n", msgStrJson);
+
+	// Encrypt the message using AES
+	StrRes encryptedMsg = AES_B64_Encrypt(StrRes(msgStrJson), StrRes(symmKey));
+	if (encryptedMsg.data == NULL) {
+		Serial.println(" > Failed to encrypt message");
+		return false;
+	}
+	Serial.printf(" > Encrypted Message: %s\n", encryptedMsg.data);
+
+	// Check if it can be decrypted
+	{
+		Serial.println(" > Decrypting message for");
+		StrRes decryptedMsg = AES_B64_Decrypt(encryptedMsg, StrRes(symmKey));
+		if (decryptedMsg.data == NULL) {
+			Serial.println(" > Failed to decrypt message");
+			free((void*)encryptedMsg.data);
+			return false;
+		}
+		Serial.printf(" > Decrypted Message: %s\n", decryptedMsg.data);
+		free((void*)decryptedMsg.data);
+	}
+	
+	// Package the message into a JSON object {type:"aes", data:"AES_BASE64"}
+	JsonDocument aesDoc;
+	aesDoc["type"] = "aes";
+	aesDoc["data"] = encryptedMsg.data;
+
+	// Package the JSON object into an object {"from": [my userid], "to": userId, data: {...}}
+	JsonDocument finalDoc;
+	finalDoc["from"] = myUserId;
+	finalDoc["to"] = userId;
+	finalDoc["data"] = aesDoc;
+
+	// Convert the JSON object into a string
+	char finalStr[1024*2];
+	memset(finalStr, 0, sizeof(finalStr));
+	if (serializeJson(finalDoc, finalStr) == 0) {
+		Serial.println(" > Failed to serialize final JSON");
+		free((void*)encryptedMsg.data);
+		return false;
+	}
+
+	Serial.printf(" > Final Message: %s\n", finalStr);
+
+	// Send the string to the websocket
+	webSocket.emit("send-message", finalStr);	
+
+	// Cleanup
+	free((void*)encryptedMsg.data);
+	return true;
 }
 
 bool replyMessage(const char* message, uint64_t userIdTo)
 {
-    // TODO: Implement
-    return false;
+	// Send a message to a user
+	// userIdTo is the user id to send the message to
+	// message is the message to send
+
+	// Check if the user id is valid
+	if (userIdTo == 0) {
+		Serial.println(" > Invalid user id");
+		return false;
+	}
+
+	// Check if the message is valid
+	if (message == NULL) {
+		Serial.println(" > Invalid message");
+		return false;
+	}
+
+	// Send the message
+	if (sendWsAesMessage(userIdTo, message)) {
+		Serial.println(" > Sent message successfully");
+		return true;
+	}
+
+	Serial.println(" > Failed to send message");
+	return false;
 }
 
 bool initWebsocket()
@@ -313,6 +436,34 @@ bool initWebsocket()
 
 	webSocket.on("disconnect", [](const char* payload, size_t length) {
 		Serial.println("> Disconnected from WS!");
+	});
+
+	webSocket.on("get-pub-key", [](const char* payload, size_t length) mutable {
+		Serial.println("> Received get-pub-key event from WS!");
+		// lastUserIdPubKey
+		uint64_t userId = lastUserIdPubKey;
+		if (userId == 0) {
+			Serial.println(" > No user id available");
+			return;
+		}
+		Serial.printf(" > User ID: %llu\n", userId);
+		Serial.print(" > Payload: ");
+		Serial.println(payload);
+
+		JsonDocument doc;
+		deserializeJson(doc, payload);
+
+		const char* pubKey = doc["public-key"];
+		Serial.printf(" > Public Key: %s\n", pubKey);
+		
+		// Save the public key of userId to a file
+		setPubKey(userId, pubKey);
+
+		// Send symm key back
+		if (sendWsRsaMessage(userId, getMySymmKey(userId)))
+			Serial.println(" > Sent Symmetric Key");
+		else
+			Serial.println(" > Failed to send Symmetric Key");
 	});
 
 	webSocket.on("message", [](const char* payload, size_t length) mutable {
@@ -379,11 +530,10 @@ bool initWebsocket()
 
 				if (strcmp(msgContent, "symm") == 0)
 				{
-					// Send symm key back
-					if (sendWsRsaMessage(fromId, getMySymmKey(fromId)))
-						Serial.println(" > Sent Symmetric Key");
-					else
-						Serial.println(" > Failed to send Symmetric Key");
+					char USERIDSTR[33];
+					itoa(fromId, USERIDSTR, 10);
+					lastUserIdPubKey = fromId;
+					webSocket.emit("get-pub-key", USERIDSTR);
 				}
 
                 if (extHandleMessage != NULL)
@@ -425,11 +575,12 @@ bool initWebsocket()
 				Serial.printf(" > Symmetric Key: %s\n", symmKey);
 				setSymmKey(fromId, symmKey);
 
-				// // Send symm key back
-				// if (sendWsRsaMessage(fromId, getMySymmKey(fromId)))
-				// 	Serial.println(" > Sent Symmetric Key");
-				// else
-				// 	Serial.println(" > Failed to send Symmetric Key");
+				// Send symm key back
+				Serial.println(" > Sending Symmetric Key Back");
+				char USERIDSTR[33];
+				itoa(fromId, USERIDSTR, 10);
+				lastUserIdPubKey = fromId;
+				webSocket.emit("get-pub-key", USERIDSTR);
 			} else {
 				Serial.printf(" > Invalid Message Type: %s\n", msgType);
 			}

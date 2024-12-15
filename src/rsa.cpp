@@ -264,6 +264,12 @@ bool CryptoInit()
     return Crypto_Verify(false);
 }
 
+void Crypt_SetPublicKey(const char* key)
+{
+    Serial.println("> Setting public key");
+    memcpy(pubKeyPem, key, strlen(key) + 1);
+}
+
 StrRes::StrRes(const char* data) : data(data), size(strlen(data)) {}
 
 StrRes::StrRes() : data(NULL), size(0) {}

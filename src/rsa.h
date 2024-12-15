@@ -8,6 +8,8 @@
 extern unsigned char privKeyPem[PRIV_KEY_PEM_SIZE];
 extern unsigned char pubKeyPem[PUB_KEY_PEM_SIZE];
 
+void Crypt_SetPublicKey(const char* key);
+
 bool testKeyGen();
 bool CryptoInit();
 
